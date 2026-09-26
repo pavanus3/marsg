@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NVIDIA Blackwell (marsg) - Chip Architecture Viewer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+        #viewer-container {
+            flex: 1;
+            position: relative;
+        }
+        #sidebar {
+            width: 300px;
+            background-color: #252526;
+            border-left: 1px solid #333;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+        .node rect {
+            stroke: #1e1e1e;
+            stroke-width: 2px;
+            transition: opacity 0.2s;
+            cursor: pointer;
+        }
+        .node:hover > rect {
+            opacity: 0.8;
+            stroke: #ffffff;
+            stroke-width: 2px;
+        }
+        .node text {
+            font-size: 14px;
+            fill: #ffffff;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2em;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+        }
+        .spec-item {
+            margin-bottom: 10px;
+        }
+        .spec-key {
+            font-weight: bold;
+            color: #9cdcfe;
+        }
+        .spec-value {
+            color: #ce9178;
+        }
+        #breadcrumbs {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(37, 37, 38, 0.8);
+            padding: 5px 10px;
+            border-radius: 4px;
+            z-index: 10;
+        }
+        .breadcrumb {
+            cursor: pointer;
+            color: #4daafc;
+        }
+        .breadcrumb:hover {
+            text-decoration: underline;
+        }
+        .separator {
+            margin: 0 5px;
+            color: #888;
+        }
+        #context-menu {
+            display: none;
+            position: absolute;
+            background: #252526;
+            border: 1px solid #454545;
+            padding: 15px;
+            border-radius: 6px;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        #context-menu label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: #d4d4d4;
+            cursor: pointer;
+        }
+        input[type="color"] {
+            border: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 0;
+            background: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="viewer-container">
+        <div id="breadcrumbs"></div>
+        <svg id="canvas" width="100%" height="100%"></svg>
+    </div>
+    <div id="sidebar">
+        <h2>Block Properties</h2>
+        <div id="specs-container">
+            <p>Select a block to view its specifications.</p>
+        </div>
+    </div>
+    
+    <div id="context-menu">
+        <label>
+            Set color for '<span id="cm-kind-name"></span>':
+            <input type="color" id="color-picker">
+        </label>
+    </div>
+
+    <script>
+        const data = {
+  "name": "NVIDIA Blackwell (marsg)",
+  "specs": {
+    "Description": "Block diagram of the Blackwell architecture including SM, Tensor Core, ALU, and Compiler Instruction mappings.",
+    "Ecosystem_Integration": "{\"Triton\": \"Compiles Python directly to PTX, leveraging TMA (cp.async.bulk) and WGMMA/tcgen05 instructions for Blackwell SMs.\", \"vLLM\": \"Leverages 5th-gen Tensor Cores and FP4/FP8 capabilities for highly efficient KV cache and LLM decoding.\", \"SCALE-Sim\": \"Simulates the systolic array configurations internally used by the 5th-Gen Tensor Cores.\", \"Modular (Mojo)\": \"Uses MAX engine and MLIR dialects to generate highly optimized SASS targeting unified CUDA cores and TMEM.\"}"
+  },
+  "color": null,
+  "children": [
+    {
+      "name": "GPU_Global",
+      "specs": {},
+      "color": null,
+      "children": [
+        {
+          "name": "Global Memory",
+          "specs": {
+            "Details": "HBM3e Memory, High Bandwidth Memory",
+            "Compiler_Mapping": "Global memory access via LD.GLOBAL, ST.GLOBAL"
+          },
+          "color": null,
+          "children": []
+        },
+        {
+          "name": "L2 Cache",
+          "specs": {
+            "Details": "Unified L2 Cache across the GPU",
+            "Compiler_Mapping": "Cached via global memory instructions"
+          },
+          "color": null,
+          "children": []
+        },
+        {
+          "name": "Interconnect",
+          "specs": {
+            "Details": "NVLink 5.0, PCIe Gen6",
+            "Compiler_Mapping": "Multi-GPU and CPU-GPU copy instructions"
+          },
+          "color": null,
+          "children": []
+        },
+        {
+          "name": "TMA (Tensor Memory Accelerator)",
+          "specs": {
+            "Details": "Hardware block for asynchronous data movement between global memory and shared memory",
+            "Compiler_Mapping": "cp.async.bulk, mbarrier (Triton utilizes this heavily)"
+          },
+          "color": null,
+          "children": []
+        },
+        {
+          "name": "CBA (Cluster-Based Architecture)",
+          "specs": {
+            "Details": "Thread Block Clusters for localized synchronization and fast data exchange",
+            "Compiler_Mapping": "mapa (multicast), barrier.cluster"
+          },
+          "color": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "GPC (Graphics Processing Cluster)",
+      "specs": {
+        "Details": "Multiple GPCs per GPU, containing multiple TPCs"
+      },
+      "color": null,
+      "children": [
+        {
+          "name": "TPC (Texture Processing Cluster)",
+          "specs": {
+            "Details": "Contains SMs, Ray Tracing Cores, and Texture Units"
+          },
+          "color": null,
+          "children": [
+            {
+              "name": "RT Core (4th Gen)",
+              "specs": {
+                "Details": "Ray-Tracing & Opacity Micromap Engine",
+                "Compiler_Mapping": "Ray Tracing API instructions"
+              },
+              "color": null,
+              "children": []
+            },
+            {
+              "name": "SM (Streaming Multiprocessor)",
+              "specs": {
+                "Details": "The core processing unit for compute"
+              },
+              "color": null,
+              "children": [
+                {
+                  "name": "Memory and Control",
+                  "specs": {},
+                  "color": null,
+                  "children": [
+                    {
+                      "name": "Warp Schedulers & Dispatch Units",
+                      "specs": {
+                        "Details": "Schedules thread warps and dispatches instructions",
+                        "Compiler_Mapping": "Controls instruction issue rates, thread level execution (tcgen05)"
+                      },
+                      "color": null,
+                      "children": []
+                    },
+                    {
+                      "name": "Register File (RF)",
+                      "specs": {
+                        "Details": "256 KB capacity per SM",
+                        "Compiler_Mapping": "R0-R255 registers in PTX/SASS"
+                      },
+                      "color": null,
+                      "children": []
+                    },
+                    {
+                      "name": "L1 Cache / Shared Memory (SMEM)",
+                      "specs": {
+                        "Details": "128 KB - 228 KB Configurable",
+                        "Compiler_Mapping": "LD.SHARED, ST.SHARED, wgmma operands"
+                      },
+                      "color": null,
+                      "children": []
+                    },
+                    {
+                      "name": "TMEM (Tensor Memory)",
+                      "specs": {
+                        "Details": "256 KB dedicated memory for Tensor Core intermediates (New in Blackwell). Reduces register pressure.",
+                        "Compiler_Mapping": "tcgen05.commit, explicit TMEM addressing"
+                      },
+                      "color": null,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "Processing Partitions",
+                  "specs": {
+                    "Details": "4 Partitions per SM, each executing instructions independently"
+                  },
+                  "color": null,
+                  "children": [
+                    {
+                      "name": "CUDA Cores (Unified ALU)",
+                      "specs": {
+                        "Quantity": "32 per Partition (128 per SM)",
+                        "Capabilities": "Unified FP32 and INT32 execution datapaths",
+                        "Compiler_Mapping": "{\"FP32\": \"FADD, FMUL, FFMA (Floating Point Math)\", \"INT32\": \"IADD, IMUL, LOP3 (Integer Math and Logic)\"}"
+                      },
+                      "color": null,
+                      "children": []
+                    },
+                    {
+                      "name": "Tensor Cores (5th Gen)",
+                      "specs": {
+                        "Quantity": "1 per Partition (4 per SM)",
+                        "Capabilities": "Transformer Engine 2.0, support for NVFP4, FP6, FP8, BF16, FP16, TF32, FP64",
+                        "Compiler_Mapping": "tcgen05.mma (Thread-level tensor ops), wgmma.mma_async (Warp-group mma)"
+                      },
+                      "color": null,
+                      "children": []
+                    },
+                    {
+                      "name": "LD/ST Units (Load/Store)",
+                      "specs": {
+                        "Quantity": "Multiple per Partition",
+                        "Capabilities": "Handles memory addresses and data transfers",
+                        "Compiler_Mapping": "LD, ST, ATOM, RED (Atomic and Reduction ops)"
+                      },
+                      "color": null,
+                      "children": []
+                    },
+                    {
+                      "name": "SFU (Special Function Units)",
+                      "specs": {
+                        "Quantity": "Multiple per Partition",
+                        "Capabilities": "Calculates transcendentals (sine, cosine, exponential, etc.)",
+                        "Compiler_Mapping": "MUFU (Sine, Cosine, Ex2, Lg2, Rcp, Rsq)"
+                      },
+                      "color": null,
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+};
+        
+        const svg = d3.select("#canvas");
+        const viewerContainer = document.getElementById("viewer-container");
+        let width = viewerContainer.clientWidth;
+        let height = viewerContainer.clientHeight;
+        
+        svg.attr("viewBox", [0, 0, width, height]);
+
+        const g = svg.append("g");
+
+        // Set up zoom
+        const zoom = d3.zoom()
+            .scaleExtent([0.5, 20])
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+        svg.call(zoom);
+
+        const root = d3.hierarchy(data)
+            .sum(d => d.children && d.children.length > 0 ? 0 : 1)
+            .sort((a, b) => b.value - a.value);
+
+        const treemap = d3.treemap()
+            .size([width, height])
+            .paddingTop(25)
+            .paddingRight(10)
+            .paddingBottom(10)
+            .paddingLeft(10)
+            .paddingInner(10)
+            .round(true);
+
+        treemap(root);
+
+        // Helper: Extracts "kind" of block by stripping trailing numbers (e.g. "Core 0" -> "Core")
+        function getKind(name) {
+            return name.replace(/\s*\d+$/, '').trim();
+        }
+
+        // Default D3 color palette
+        const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+        function getBlockColor(d) {
+            if (d.depth === 0) return "#333333"; // Root
+            if (d.data.color) return d.data.color; // Custom color in JSON
+            
+            // Auto-assign based on block kind
+            const kind = getKind(d.data.name);
+            return colorScale(kind);
+        }
+
+        // Draw blocks
+        const nodes = g.selectAll(".node")
+            .data(root.descendants())
+            .join("g")
+            .attr("class", "node")
+            .attr("transform", d => `translate(${d.x0},${d.y0})`)
+            .on("click", (event, d) => showSpecs(d))
+            .on("dblclick", (event, d) => zoomToNode(d, event))
+            .on("contextmenu", (event, d) => showContextMenu(event, d));
+
+        nodes.append("rect")
+            .attr("width", d => d.x1 - d.x0)
+            .attr("height", d => d.y1 - d.y0)
+            .style("fill", d => getBlockColor(d));
+
+        // Labels
+        nodes.append("text")
+            .attr("x", 5)
+            .attr("y", 18)
+            .text(d => d.data.name)
+            .attr("opacity", function(d) {
+                return (d.x1 - d.x0) > 30 && (d.y1 - d.y0) > 20 ? 1 : 0;
+            });
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            width = viewerContainer.clientWidth;
+            height = viewerContainer.clientHeight;
+            svg.attr("viewBox", [0, 0, width, height]);
+            treemap.size([width, height]);
+            treemap(root);
+            
+            nodes.transition().duration(500)
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+            
+            nodes.select("rect").transition().duration(500)
+                .attr("width", d => d.x1 - d.x0)
+                .attr("height", d => d.y1 - d.y0);
+                
+            nodes.select("text").transition().duration(500)
+                .attr("opacity", d => (d.x1 - d.x0) > 30 && (d.y1 - d.y0) > 20 ? 1 : 0);
+        });
+
+        let currentZoomNode = root;
+        updateBreadcrumbs();
+
+        function showSpecs(d) {
+            const container = document.getElementById("specs-container");
+            container.innerHTML = `<h3>${d.data.name}</h3>`;
+            
+            if (d.data.specs && Object.keys(d.data.specs).length > 0) {
+                for (const [key, value] of Object.entries(d.data.specs)) {
+                    container.innerHTML += `
+                        <div class="spec-item">
+                            <span class="spec-key">${key}:</span> 
+                            <span class="spec-value">${value}</span>
+                        </div>
+                    `;
+                }
+            } else {
+                container.innerHTML += `<p>No specifications available.</p>`;
+            }
+        }
+
+        function zoomToNode(d, event) {
+            if (event) event.stopPropagation();
+            currentZoomNode = d;
+            updateBreadcrumbs();
+
+            const x = d.x0;
+            const y = d.y0;
+            const nodeWidth = d.x1 - d.x0;
+            const nodeHeight = d.y1 - d.y0;
+
+            const scale = Math.min(width / nodeWidth, height / nodeHeight) * 0.95;
+            const translate = [width / 2 - (x + nodeWidth / 2) * scale, height / 2 - (y + nodeHeight / 2) * scale];
+
+            svg.transition()
+                .duration(750)
+                .call(
+                    zoom.transform,
+                    d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+                );
+        }
+
+        function updateBreadcrumbs() {
+            const container = document.getElementById("breadcrumbs");
+            container.innerHTML = "";
+            
+            const ancestors = currentZoomNode.ancestors().reverse();
+            
+            ancestors.forEach((node, index) => {
+                const span = document.createElement("span");
+                span.className = "breadcrumb";
+                span.textContent = node.data.name;
+                span.onclick = () => zoomToNode(node);
+                container.appendChild(span);
+                
+                if (index < ancestors.length - 1) {
+                    const sep = document.createElement("span");
+                    sep.className = "separator";
+                    sep.textContent = ">";
+                    container.appendChild(sep);
+                }
+            });
+        }
+        
+        // Context Menu Logic for Colors
+        const contextMenu = document.getElementById("context-menu");
+        const colorPicker = document.getElementById("color-picker");
+        const cmKindName = document.getElementById("cm-kind-name");
+        let targetNode = null;
+
+        function rgbToHex(rgb) {
+            // Converts rgb(r,g,b) to hex, D3 colors might return rgb or hex
+            if (rgb.startsWith("#")) return rgb;
+            const rgbArr = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+            if (!rgbArr) return "#000000";
+            function hexCode(i) {
+                return ("0" + parseInt(i).toString(16)).slice(-2);
+            }
+            return "#" + hexCode(rgbArr[1]) + hexCode(rgbArr[2]) + hexCode(rgbArr[3]);
+        }
+
+        function showContextMenu(event, d) {
+            event.preventDefault();
+            if (d.depth === 0) return; // Don't color root
+            
+            targetNode = d;
+            const kind = getKind(d.data.name);
+            cmKindName.textContent = kind;
+            
+            // Compute current color of the rect
+            const currentFill = d3.select(event.currentTarget).select("rect").style("fill");
+            colorPicker.value = rgbToHex(currentFill);
+            
+            contextMenu.style.display = "block";
+            contextMenu.style.left = event.pageX + "px";
+            contextMenu.style.top = event.pageY + "px";
+        }
+
+        document.addEventListener("click", (e) => {
+            if (e.target.id !== "color-picker" && !e.target.closest('#context-menu')) {
+                contextMenu.style.display = "none";
+            }
+        });
+
+        colorPicker.addEventListener("input", (e) => {
+            if (targetNode) {
+                const newColor = e.target.value;
+                const kind = getKind(targetNode.data.name);
+                
+                // Update color for all nodes of the same kind
+                nodes.selectAll("rect").style("fill", function(n) {
+                    if (n.depth === 0) return "#333333";
+                    if (getKind(n.data.name) === kind) {
+                        n.data.color = newColor; // Temporarily persist in DOM data
+                        return newColor;
+                    }
+                    return getBlockColor(n);
+                });
+            }
+        });
+        
+        // Initial zoom to fit root
+        svg.call(zoom.transform, d3.zoomIdentity);
+    </script>
+</body>
+</html>
